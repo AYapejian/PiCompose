@@ -1,0 +1,14 @@
+[Unit]
+Description=Sync /boot/firmware/lva.env onto /compose/lva/.env (FAT32 override)
+DefaultDependencies=no
+After=local-fs.target
+Before=picompose.service
+RequiresMountsFor=/boot/firmware /compose
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/lva-env-sync
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
