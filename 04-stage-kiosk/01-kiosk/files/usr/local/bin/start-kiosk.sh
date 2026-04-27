@@ -9,7 +9,12 @@
 set -euo pipefail
 
 CONF=/boot/firmware/kiosk.conf
-KIOSK_URL="https://192.168.1.210:8123"
+# Default to plain HTTP. Home Assistant is HTTP-only out of the box;
+# HTTPS requires explicit cert + http: block in configuration.yaml.
+# Pointing at https:// without that gets ERR_SSL_PROTOCOL_ERROR on
+# Chromium ("192.168.x.x sent an invalid response"). Override here
+# in /boot/firmware/kiosk.conf if your HA does serve HTTPS.
+KIOSK_URL="http://192.168.1.210:8123"
 EXTRA_FLAGS=""
 
 # shellcheck source=/dev/null
