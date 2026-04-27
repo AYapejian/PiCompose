@@ -6,7 +6,10 @@
 # minimal here.
 
 IMG_NAME='ara-kiosk'
-RELEASE='bookworm'
+# trixie (Debian 13) — see .github/workflows/build-image-template.yml
+# for why this isn't bookworm. RPi OS trixie ships the chromium-browser,
+# cage, pipewire, and seatd packages we need.
+RELEASE='trixie'
 ARCH='arm64'
 
 # Hostname (Imager overrides at flash time)

@@ -113,8 +113,18 @@ jobs:
           # Stage list construction
           stage-list: ${{ inputs.stage-list }}
           
-          # Build configuration
-          release: bookworm
+          # Build configuration. Using trixie (Debian 13) here even
+          # though the rest of the docs talk about bookworm — pi-gen-action's
+          # pi-gen Docker container is trixie-based, and trixie's
+          # debian-archive-keyring no longer ships bookworm signing
+          # keys. With release: bookworm, stage0/00-configure-apt does
+          # `apt-get update` inside the chroot and immediately fails
+          # InRelease verification with NO_PUBKEY 6ED0E7B82643E131 (and
+          # friends). Matching the chroot release to the build container
+          # avoids that. Upstream PiCompose hit the same wall and is on
+          # trixie too. RPi OS trixie has all the packages we need
+          # (cage, chromium-browser via the RPi repo, pipewire stack).
+          release: trixie
           compression: ${{ inputs.compression }}
           compression-level: ${{ inputs.compression-level }}
           
