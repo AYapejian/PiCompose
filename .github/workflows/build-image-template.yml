@@ -84,7 +84,7 @@ jobs:
           stage-list: ${{ inputs.stage-list }}
           
           # Build configuration
-          release: trixie
+          release: bookworm
           compression: ${{ inputs.compression }}
           compression-level: ${{ inputs.compression-level }}
           
@@ -101,7 +101,7 @@ jobs:
           locale: en_US.UTF-8
           keyboard-layout: English (US)
           keyboard-keymap: us
-          timezone: Europe/London
+          timezone: America/New_York
           
           # Security settings
           disable-first-boot-user-rename: 0

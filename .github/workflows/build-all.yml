@@ -1,66 +1,23 @@
-name: Build All PiCompose
+name: Build ara-kiosk image
 
+# DISABLED until local build is validated. Re-enable by uncommenting
+# the `push` trigger below — see CLAUDE.md → "Local build instructions"
+# first. Until then, builds run only via the Actions tab "Run workflow"
+# button or via `gh workflow run`.
 on:
-  push:
-    branches:
-      - main
-      - feature/*
-      - fix/*
-      - hotfix/*
-      - bugfix/*
-    tags:
-      - 'v*.*.*'
+  workflow_dispatch: {}
+  # push:
+  #   branches:
+  #     - main
+  #   tags:
+  #     - 'v*.*.*'
 
 jobs:
-  # NO SPECIFIC HARDWARE
-  build:
+  ara-kiosk-xvf3800-lva:
     uses: ./.github/workflows/build-image-template.yml
     with:
-      image-name: PiCompose
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-other ./04-stage-finish
-      compression: zip
-      compression-level: 6
-      custom-hostname: picompose
-
-  # 2MICHAT-v1
-  build-2michat:
-    uses: ./.github/workflows/build-image-template.yml
-    with:
-      image-name: PiCompose-2MicHat
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-2michat-v1 ./04-stage-finish
+      image-name: ara-kiosk
+      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-xvf3800 ./03-stage-linux-voice-assistant ./04-stage-kiosk ./05-stage-finish
       compression: xz
       compression-level: 6
-      custom-hostname: picompose
-
-  build-2michat-lva:
-    uses: ./.github/workflows/build-image-template.yml
-    with:
-      image-name: PiCompose_2MicHat_Linux-Voice-Assistant
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-2michat-v1 ./03-stage-linux-voice-assistant ./04-stage-finish
-      compression: xz
-      compression-level: 6
-      custom-hostname: picompose
-
-  # RESPEAKER-LITE
-  build-respeaker_lite:
-    uses: ./.github/workflows/build-image-template.yml
-    with:
-      image-name: PiCompose-Respeaker_lite
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-respeaker_lite ./04-stage-finish
-      compression: xz
-      compression-level: 6
-      custom-hostname: picompose
-
-  build-respeaker_lite-lva:
-    uses: ./.github/workflows/build-image-template.yml
-    with:
-      image-name: PiCompose_Respeaker-lite_Linux-Voice-Assistant
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-respeaker_lite ./03-stage-linux-voice-assistant ./04-stage-finish
-      compression: xz
-      compression-level: 6
-      custom-hostname: picompose
-
-  # RPI IMAGER JSON
-  generate-rpi-imager-json:
-    needs: [build, build-2michat, build-respeaker_lite, build-2michat-lva, build-respeaker_lite-lva]
-    uses: ./.github/workflows/create-rpi-image-json.yml
+      custom-hostname: kiosk
