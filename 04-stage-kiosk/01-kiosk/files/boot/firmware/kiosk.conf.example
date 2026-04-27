@@ -4,20 +4,21 @@
 # before first boot, or any time later from any laptop with the SD
 # card mounted. start-kiosk.sh sources it at every cage launch.
 
-# === Default: LAN ===
-# Lowest-latency option when this kiosk is on the same LAN as Home
-# Assistant. --ignore-certificate-errors in start-kiosk.sh handles
-# HA's self-signed cert.
-KIOSK_URL=https://192.168.1.210:8123
+# === Default: LAN over plain HTTP ===
+# Home Assistant is HTTP-only by default (no cert config in
+# configuration.yaml = no HTTPS). Pointing at https:// without an
+# explicit http: block + cert gets Chromium ERR_SSL_PROTOCOL_ERROR.
+KIOSK_URL=http://192.168.1.210:8123
+
+# === Alternative: LAN over HTTPS (if you've configured a cert in HA) ===
+# --ignore-certificate-errors in start-kiosk.sh handles HA's
+# self-signed cert if you go this route.
+# KIOSK_URL=https://192.168.1.210:8123
 
 # === Alternative: Nabu Casa relay ===
 # Use when the kiosk is OFF the home LAN. Adds 30-100ms relay latency
 # per request and runs every websocket entity update through the relay.
-# Trades latency for not needing --ignore-certificate-errors.
 # KIOSK_URL=https://lgthcmaysohssmsk9tvq7pz96zocz7oa.ui.nabu.casa/
-
-# === Alternative: HTTP for dev ===
-# KIOSK_URL=http://192.168.1.210:8123
 
 # === Per-device dashboard / app-mode flags ===
 # Useful for room-specific dashboards, e.g.
