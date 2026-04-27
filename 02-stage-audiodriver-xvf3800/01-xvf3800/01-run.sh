@@ -63,11 +63,16 @@ install -v -m 755 files/usr/local/bin/xvf3800-led \
 install -v -m 644 files/etc/systemd/system/xvf3800-led.service \
     "${ROOTFS_DIR}/etc/systemd/system/xvf3800-led.service"
 
-# Group memberships. `audio` and `video` are Bookworm defaults for `pi`,
+# Group memberships. `audio` and `video` are RPi-OS defaults for `pi`,
 # but `plugdev` is needed for the udev rules above and `render` is needed
 # for VAAPI in Chromium (kiosk stage uses --enable-features=VaapiVideoDecoder).
+#
+# Note: lingering for `pi` is already enabled by 01-stage-picompose/
+# 03-install-pipewire-audio/02-run.sh, which uses the chroot-safe
+# `touch /var/lib/systemd/linger/pi` pattern. Don't call
+# `loginctl enable-linger` here — it requires a running session bus
+# and fails the build inside the pi-gen chroot ("System has not been
+# booted with systemd as init system (PID 1)").
 on_chroot << CHROOT_EOF
 usermod -aG audio,video,render,plugdev ${FIRST_USER_NAME}
-# Lingering already enabled in stage 01; idempotent re-touch is a no-op.
-loginctl enable-linger ${FIRST_USER_NAME}
 CHROOT_EOF
