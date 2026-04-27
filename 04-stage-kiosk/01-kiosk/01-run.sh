@@ -21,12 +21,15 @@ install -v -m 644 -o "${USER_UID}" -g "${USER_UID}" \
     files/home/pi/.bash_profile \
     "${ROOTFS_DIR}${USER_HOME}/.bash_profile"
 
-# Kiosk launcher.
-install -v -d -o "${USER_UID}" -g "${USER_UID}" \
-    "${ROOTFS_DIR}${USER_HOME}/.config/kiosk"
-install -v -m 755 -o "${USER_UID}" -g "${USER_UID}" \
-    files/home/pi/.config/kiosk/start-kiosk.sh \
-    "${ROOTFS_DIR}${USER_HOME}/.config/kiosk/start-kiosk.sh"
+# Kiosk launcher lives in /usr/local/bin so it's reachable regardless
+# of what cloud-init / userconf-pi do to /home/pi at first boot. Earlier
+# revisions installed it under /home/pi/.config/kiosk/, but a first-boot
+# step (likely userconf-pi or one of the cloud-init user modules)
+# recreated /home/pi/.config as root:root 0700 — `pi` couldn't traverse
+# in, so cage failed with EACCES trying to exec the script. System-wide
+# install dodges that whole class of problem.
+install -v -m 755 files/usr/local/bin/start-kiosk.sh \
+    "${ROOTFS_DIR}/usr/local/bin/start-kiosk.sh"
 
 # FAT32 override example.
 install -v -m 644 files/boot/firmware/kiosk.conf.example \
