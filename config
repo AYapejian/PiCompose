@@ -1,0 +1,42 @@
+# pi-gen top-level configuration for ara-kiosk-image
+#
+# This file is sourced by pi-gen at the start of the build (and by
+# scripts/build-local.sh, which symlinks it into a pi-gen working tree).
+# Anything that can be overridden by Imager at flash time is intentionally
+# minimal here.
+
+IMG_NAME='ara-kiosk'
+RELEASE='bookworm'
+ARCH='arm64'
+
+# Hostname (Imager overrides at flash time)
+TARGET_HOSTNAME='kiosk'
+
+# Locale, timezone, keyboard
+LOCALE_DEFAULT='en_US.UTF-8'
+TIMEZONE_DEFAULT='America/New_York'
+KEYBOARD_KEYMAP='us'
+KEYBOARD_LAYOUT='English (US)'
+
+# Default first user (Imager overrides at flash time)
+FIRST_USER_NAME='pi'
+FIRST_USER_PASS='raspberry'
+DISABLE_FIRST_BOOT_USER_RENAME=1
+
+# SSH on by default; user adds pubkey via Imager
+ENABLE_SSH=1
+PUBKEY_ONLY_SSH=0
+
+# Wi-Fi (US regulatory domain)
+WPA_COUNTRY='US'
+
+# Image compression
+DEPLOY_COMPRESSION='xz'
+COMPRESSION_LEVEL=6
+
+# Only export the final stage as the .img
+EXPORT_LAST_STAGE_ONLY=1
+
+# Stage execution order. stage0/1/2 are upstream pi-gen stages
+# (bootstrap, minimal, lite); the rest live in this repo.
+STAGE_LIST="stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-xvf3800 ./03-stage-linux-voice-assistant ./04-stage-kiosk ./05-stage-finish"
