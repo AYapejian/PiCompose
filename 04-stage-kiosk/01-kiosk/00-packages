@@ -1,7 +1,7 @@
 cage
 seatd
 xwayland
-chromium
+chromium-browser
 fonts-dejavu
 fonts-liberation
 netcat-openbsd
