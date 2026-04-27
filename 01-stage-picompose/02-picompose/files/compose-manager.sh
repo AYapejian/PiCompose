@@ -65,6 +65,27 @@ wait_for_docker() {
     log "Docker is active"
 }
 
+# LVA mounts /run/user/1000/pulse and will exit on startup if the socket
+# isn't present yet — pi user lingering brings the user systemd up at
+# boot but the socket may take a few seconds longer.
+wait_for_pulse_socket() {
+    local sock="/run/user/1000/pulse/native"
+    local timeout=60
+    local elapsed=0
+    local interval=2
+
+    log "Waiting for PulseAudio/PipeWire socket at $sock..."
+    while [ ! -S "$sock" ]; do
+        sleep $interval
+        elapsed=$((elapsed + interval))
+        if [ $elapsed -ge $timeout ]; then
+            log "WARN: $sock not present after ${timeout}s; proceeding anyway"
+            return 0
+        fi
+    done
+    log "PulseAudio/PipeWire socket is live"
+}
+
 # Function to set up cron jobs for re-deployments
 setup_cron() {
     local folder="$1"
@@ -168,6 +189,12 @@ scan() {
         
     # Search the Compose directory for subdirectories
     log "Searching for Docker Compose projects in $base_path"
+
+    # Audio-using compose projects (LVA, snapcast, ...) mount the pi user's
+    # PipeWire/Pulse socket. Block until it exists, otherwise the very first
+    # `docker compose up` after boot races the user session.
+    wait_for_pulse_socket
+
     found_projects=0
 
     # First run detection: check once before processing projects
