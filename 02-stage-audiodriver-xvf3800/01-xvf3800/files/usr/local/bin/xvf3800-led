@@ -1,34 +1,62 @@
 #!/usr/bin/env bash
-# xvf3800-led — stub LED control daemon for the reSpeaker XVF3800.
+# xvf3800-led — set the reSpeaker XVF3800's LED ring to a steady idle state.
 #
-# This is a placeholder. By default this script just sets a steady "idle"
-# color on boot and exits. Wiring it to LVA's wake-word state via the
-# ESPHome API is a documented follow-up; until then this script proves
-# `xvf_host` works on the device.
+# Run as a systemd oneshot at boot. Defaults to a single dim cool-white
+# color so you can tell at a glance the device is alive without an
+# obnoxious animation. Override the values below by dropping
+# /etc/default/xvf3800-led with KEY=VALUE lines.
 #
-# To use the LEDs interactively after boot:
-#   xvf_host SET_LED_RING_EFFECT <effect-id>
+# Verbs (uppercase or lowercase, both work):
+#   LED_EFFECT      0=off, 1=breath, 2=rainbow, 3=single color, 4=DoA
+#   LED_COLOR       uint32 RGB, e.g. 0xff8800
+#   LED_BRIGHTNESS  uint8 0-255
+#   LED_SPEED       uint8 (used by breath / rainbow)
+#   LED_GAMMIFY     0/1
 #
-# Find the device with: lsusb | grep -iE 'xmos|xvf'
+# Wiring this to LVA wake-word / processing / speaking state via the
+# ESPHome API is the next step (see CLAUDE.md "Future enhancements").
+# When that lands, this stub becomes the fallback that runs when the
+# event-driven daemon isn't active.
 
 set -euo pipefail
 
-# Wait up to 30s for the device to enumerate after boot (USB takes a
-# moment, and on a cold boot we may run before udev settles).
+# Defaults — overridable via /etc/default/xvf3800-led
+LED_EFFECT="${LED_EFFECT:-3}"            # single color
+LED_COLOR="${LED_COLOR:-0x002030}"       # very dim cyan
+LED_BRIGHTNESS="${LED_BRIGHTNESS:-64}"   # ~25%
+LED_SPEED="${LED_SPEED:-1}"
+LED_GAMMIFY="${LED_GAMMIFY:-1}"
+
+if [ -f /etc/default/xvf3800-led ]; then
+    # shellcheck source=/dev/null
+    . /etc/default/xvf3800-led
+fi
+
+if ! command -v xvf_host >/dev/null 2>&1; then
+    echo "xvf3800-led: xvf_host wrapper not installed; skipping" >&2
+    exit 0
+fi
+
+# Wait up to 30s for the device to enumerate after boot. USB takes a
+# moment, and on cold boot we may run before udev settles.
 for _ in $(seq 1 30); do
-    if lsusb | grep -qiE 'xmos|xvf'; then
+    if lsusb 2>/dev/null | grep -qiE 'xmos|xvf'; then
         break
     fi
     sleep 1
 done
 
-# Try a steady "idle" effect. Verb names vary by firmware revision —
-# don't hard-fail if it's not what this firmware expects, just log and exit.
-if command -v xvf_host >/dev/null 2>&1; then
-    xvf_host SET_LED_RING_EFFECT 1 \
-        || echo "xvf3800-led: xvf_host LED command not validated for this firmware" >&2
-else
-    echo "xvf3800-led: xvf_host CLI not installed; skipping" >&2
+# Sanity-check connectivity before issuing LED commands; if the device
+# isn't actually there, fail soft and exit 0 so the unit doesn't trip
+# Restart= loops.
+if ! xvf_host VERSION >/dev/null 2>&1; then
+    echo "xvf3800-led: VERSION query failed; reSpeaker not responding, leaving LEDs untouched" >&2
+    exit 0
 fi
 
-exit 0
+xvf_host LED_GAMMIFY    "${LED_GAMMIFY}"    || true
+xvf_host LED_BRIGHTNESS "${LED_BRIGHTNESS}" || true
+xvf_host LED_SPEED      "${LED_SPEED}"      || true
+xvf_host LED_COLOR      "${LED_COLOR}"      || true
+xvf_host LED_EFFECT     "${LED_EFFECT}"     || true
+echo "xvf3800-led: idle state set (effect=${LED_EFFECT} color=${LED_COLOR} brightness=${LED_BRIGHTNESS})"

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# xvf_i2c_dfu — wrapper around the upstream I2C DFU tool used to flash
+# XVF3800 firmware over I2C. Same wrapper rationale as xvf_host: cd into
+# the install dir so .so / yaml files resolve correctly.
+#
+# Usage: xvf_i2c_dfu --help
+
+set -euo pipefail
+INSTALL_DIR="/opt/respeaker-xvf3800"
+
+if [ ! -x "${INSTALL_DIR}/xvf_i2c_dfu" ]; then
+    echo "xvf_i2c_dfu: ${INSTALL_DIR}/xvf_i2c_dfu not installed" >&2
+    exit 127
+fi
+
+cd "${INSTALL_DIR}"
+exec env LD_LIBRARY_PATH="${INSTALL_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+    ./xvf_i2c_dfu "$@"

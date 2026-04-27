@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# xvf_host — wrapper around the upstream xvf_host binary.
+#
+# The Seeed reSpeaker_XVF3800_USB_4MIC_ARRAY/host_control/rpi_64bit/ directory
+# ships a dynamically-linked binary that depends on libcommand_map.so,
+# libdevice_usb.so, and libdevice_i2c.so located alongside it, plus YAML
+# configs (transport_config.yaml, dfu_cmds.yaml) read from CWD. The cleanest
+# way to honor both is to cd into the install dir and exec the binary.
+#
+# Usage: xvf_host VERSION
+#        xvf_host LED_EFFECT 1
+#        xvf_host LED_COLOR 0xff8800
+#        See: https://github.com/respeaker/reSpeaker_XVF3800_USB_4MIC_ARRAY/blob/master/host_control/README.md
+
+set -euo pipefail
+INSTALL_DIR="/opt/respeaker-xvf3800"
+
+if [ ! -x "${INSTALL_DIR}/xvf_host" ]; then
+    echo "xvf_host: ${INSTALL_DIR}/xvf_host not installed" >&2
+    echo "  (build-time download from upstream may have failed; reinstall the image" >&2
+    echo "  or fetch the rpi_64bit files manually from Seeed's repo)" >&2
+    exit 127
+fi
+
+cd "${INSTALL_DIR}"
+exec env LD_LIBRARY_PATH="${INSTALL_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+    ./xvf_host "$@"

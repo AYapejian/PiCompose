@@ -16,11 +16,25 @@
 #   - a config.txt patch disabling HDMI audio at the device-tree level so
 #     the reSpeaker is the only sink and the on-board AEC reference stays
 #     correct
-#   - an `xvf_host` install for LED ring / DOA / DSP control (system-wide
-#     pip with --break-system-packages, intentional for this purpose-built
-#     image)
-#   - a stub xvf3800-led.service (NOT enabled by default — wiring it to
-#     LVA wake-word state is a documented follow-up)
+#   - the upstream `xvf_host` suite for LED ring / DOA / DSP control,
+#     downloaded at build time from Seeed's reSpeaker_XVF3800_USB_4MIC_ARRAY
+#     repo (host_control/rpi_64bit/) and installed under
+#     /opt/respeaker-xvf3800/ with PATH wrappers
+#   - xvf3800-led.service that sets a steady idle color on boot
+
+# Pinned to a specific commit for build reproducibility. Bump as needed
+# when Seeed publishes new firmware/control binaries.
+XVF_REPO_SHA="2ce5fa60620642815b8bb056002ba9e21f4c6686"
+XVF_BASE_URL="https://raw.githubusercontent.com/respeaker/reSpeaker_XVF3800_USB_4MIC_ARRAY/${XVF_REPO_SHA}/host_control/rpi_64bit"
+XVF_FILES=(
+    xvf_host
+    xvf_i2c_dfu
+    libcommand_map.so
+    libdevice_usb.so
+    libdevice_i2c.so
+    dfu_cmds.yaml
+    transport_config.yaml
+)
 
 USER_HOME="/home/${FIRST_USER_NAME}"
 USER_UID="1000"
@@ -45,23 +59,51 @@ install -v -m 644 files/etc/pipewire.conf.d/20-xvf3800-clock.conf \
 sed -i -E 's|^(dtoverlay=vc4-kms-v3d)(,[^[:space:]]+)?[[:space:]]*$|\1,noaudio|' \
     "${ROOTFS_DIR}/boot/firmware/config.txt"
 
-# xvf_host: install Seeed's XMOS USB control tool for LED ring / DOA / DSP
-# tuning. Bookworm enforces PEP 668 on system Python; --break-system-packages
-# is acceptable for a purpose-built image where we own all Python state.
-on_chroot << 'CHROOT_EOF'
-set -e
-pip3 install --break-system-packages --no-cache-dir xmos-xvf-host \
-    || pip3 install --break-system-packages --no-cache-dir \
-        'git+https://github.com/respeaker/reSpeaker_XVF3800_USB_4MIC_ARRAY.git#subdirectory=xvf_host_app' \
-    || echo "WARN: xvf_host install failed — LED control will be unavailable until installed manually"
-CHROOT_EOF
+# Download the xvf_host suite. These are pre-built arm64 binaries + shared
+# libraries from Seeed; there's no PyPI package and the repo is a git mirror
+# of opaque XMOS tooling, so the only sensible install path is to fetch the
+# specific files we need from the pinned commit.
+XVF_DEST="${ROOTFS_DIR}/opt/respeaker-xvf3800"
+install -v -d -m 755 "${XVF_DEST}"
 
-# Stub LED daemon (disabled by default; activate after validating xvf_host
-# verbs against the actual hardware firmware version).
+xvf_install_ok=true
+for f in "${XVF_FILES[@]}"; do
+    if ! curl -fsSL --retry 3 --retry-delay 2 \
+            -o "${XVF_DEST}/${f}" "${XVF_BASE_URL}/${f}"; then
+        echo "WARN: failed to fetch ${f} from ${XVF_BASE_URL}"
+        xvf_install_ok=false
+        break
+    fi
+done
+
+if "${xvf_install_ok}"; then
+    chmod 0755 "${XVF_DEST}/xvf_host" "${XVF_DEST}/xvf_i2c_dfu"
+    chmod 0644 "${XVF_DEST}"/*.so "${XVF_DEST}"/*.yaml
+    echo "==> xvf_host suite installed to /opt/respeaker-xvf3800/"
+else
+    echo "WARN: xvf_host install incomplete; LED + DSP control will be unavailable"
+    rm -rf "${XVF_DEST}"
+fi
+
+# PATH wrappers — set LD_LIBRARY_PATH and cd into the install dir so the
+# binary finds its .so files and the YAML config files relative to CWD.
+install -v -m 755 files/usr/local/bin/xvf_host \
+    "${ROOTFS_DIR}/usr/local/bin/xvf_host"
+install -v -m 755 files/usr/local/bin/xvf_i2c_dfu \
+    "${ROOTFS_DIR}/usr/local/bin/xvf_i2c_dfu"
+
+# LED daemon — installs a steady idle color on boot and exits. Enabled by
+# default now that we have real verbs; wiring it to LVA wake-word state via
+# the ESPHome API is still a follow-up.
 install -v -m 755 files/usr/local/bin/xvf3800-led \
     "${ROOTFS_DIR}/usr/local/bin/xvf3800-led"
 install -v -m 644 files/etc/systemd/system/xvf3800-led.service \
     "${ROOTFS_DIR}/etc/systemd/system/xvf3800-led.service"
+
+on_chroot << 'CHROOT_EOF'
+systemctl daemon-reload
+systemctl enable xvf3800-led.service
+CHROOT_EOF
 
 # Group memberships. `audio` and `video` are RPi-OS defaults for `pi`,
 # but `plugdev` is needed for the udev rules above and `render` is needed
