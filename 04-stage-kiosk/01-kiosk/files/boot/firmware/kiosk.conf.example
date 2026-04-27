@@ -1,0 +1,28 @@
+# /boot/firmware/kiosk.conf — per-device kiosk configuration.
+#
+# Copy this file to kiosk.conf (no .example) on the FAT32 partition
+# before first boot, or any time later from any laptop with the SD
+# card mounted. start-kiosk.sh sources it at every cage launch.
+
+# === Default: LAN ===
+# Lowest-latency option when this kiosk is on the same LAN as Home
+# Assistant. --ignore-certificate-errors in start-kiosk.sh handles
+# HA's self-signed cert.
+KIOSK_URL=https://192.168.1.210:8123
+
+# === Alternative: Nabu Casa relay ===
+# Use when the kiosk is OFF the home LAN. Adds 30-100ms relay latency
+# per request and runs every websocket entity update through the relay.
+# Trades latency for not needing --ignore-certificate-errors.
+# KIOSK_URL=https://lgthcmaysohssmsk9tvq7pz96zocz7oa.ui.nabu.casa/
+
+# === Alternative: HTTP for dev ===
+# KIOSK_URL=http://192.168.1.210:8123
+
+# === Per-device dashboard / app-mode flags ===
+# Useful for room-specific dashboards, e.g.
+#   /lovelace/kiosk-livingroom
+#   /lovelace-mobile/0
+# Examples (uncomment one):
+# EXTRA_FLAGS="--app=https://192.168.1.210:8123/lovelace/kiosk-livingroom"
+# EXTRA_FLAGS="--lang=en-US --force-device-scale-factor=1.25"
