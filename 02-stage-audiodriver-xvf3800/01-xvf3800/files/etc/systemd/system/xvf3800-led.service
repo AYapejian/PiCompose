@@ -1,0 +1,12 @@
+[Unit]
+Description=XVF3800 LED control (stub)
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/xvf3800-led
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

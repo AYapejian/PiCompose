@@ -1,0 +1,4 @@
+dfu-util
+usbutils
+python3-venv
+alsa-utils
