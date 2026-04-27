@@ -1,0 +1,19 @@
+[Unit]
+Description=Bridge LVA voice-assistant state to XVF3800 LED ring
+After=docker.service picompose.service xvf3800-led.service
+Wants=docker.service picompose.service
+# Don't start until docker is alive; the bridge itself waits for the
+# lva container to exist after that.
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/xvf3800-led-bridge
+Restart=always
+RestartSec=5s
+# The bridge is just shell + docker CLI + xvf_host. Don't need a TTY.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

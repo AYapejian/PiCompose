@@ -93,16 +93,26 @@ install -v -m 755 files/usr/local/bin/xvf_i2c_dfu \
     "${ROOTFS_DIR}/usr/local/bin/xvf_i2c_dfu"
 
 # LED daemon — installs a steady idle color on boot and exits. Enabled by
-# default now that we have real verbs; wiring it to LVA wake-word state via
-# the ESPHome API is still a follow-up.
+# default now that we have real verbs.
 install -v -m 755 files/usr/local/bin/xvf3800-led \
     "${ROOTFS_DIR}/usr/local/bin/xvf3800-led"
 install -v -m 644 files/etc/systemd/system/xvf3800-led.service \
     "${ROOTFS_DIR}/etc/systemd/system/xvf3800-led.service"
 
+# LED bridge — tails `docker logs -f lva` and translates LVA voice
+# pipeline state (listening / thinking / speaking / idle) into
+# xvf_host LED commands. Requires LVA's ENABLE_DEBUG="1" so the
+# satellite logs every "Voice event:" transition (set in our
+# /compose/lva/.env defaults).
+install -v -m 755 files/usr/local/bin/xvf3800-led-bridge \
+    "${ROOTFS_DIR}/usr/local/bin/xvf3800-led-bridge"
+install -v -m 644 files/etc/systemd/system/xvf3800-led-bridge.service \
+    "${ROOTFS_DIR}/etc/systemd/system/xvf3800-led-bridge.service"
+
 on_chroot << 'CHROOT_EOF'
 systemctl daemon-reload
 systemctl enable xvf3800-led.service
+systemctl enable xvf3800-led-bridge.service
 CHROOT_EOF
 
 # Group memberships. `audio` and `video` are RPi-OS defaults for `pi`,
