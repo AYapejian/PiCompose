@@ -8,3 +8,7 @@
 .DS_Store
 *.swp
 *~
+
+# Python bytecode (the imager-json script gets py_compile'd in CI)
+__pycache__/
+*.pyc

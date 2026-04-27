@@ -1,0 +1,12 @@
+[Unit]
+Description=Write a boot-status diagnostic snapshot to /boot/firmware/last-boot-status.txt
+After=multi-user.target docker.service picompose.service
+Wants=docker.service picompose.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/boot-status
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

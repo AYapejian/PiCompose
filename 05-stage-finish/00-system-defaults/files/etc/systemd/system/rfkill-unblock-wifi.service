@@ -1,0 +1,13 @@
+[Unit]
+Description=Release any RF Kill blocks on Wi-Fi at boot
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=NetworkManager.service wpa_supplicant.service network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rfkill-unblock-wifi
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# boot-status — write a diagnostic snapshot to the FAT32 partition.
+#
+# When the kiosk doesn't come up and you can't SSH in (no Wi-Fi, no
+# Ethernet), the SD card is the only thing you can inspect. Pull the
+# card, read /boot/firmware/last-boot-status.txt on any laptop, and
+# you have everything you'd otherwise need to gather over a shell.
+#
+# Run once on boot via boot-status.service, then every 5 minutes via
+# boot-status.timer so the file reflects current reality (e.g., LVA
+# might not be up at first read but is later).
+
+set -u
+
+OUT="/boot/firmware/last-boot-status.txt"
+TMP="$(mktemp)"
+trap 'rm -f "${TMP}"' EXIT
+
+now() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+
+# Wrap a command, tagging its output. Failures don't abort the script.
+section() {
+    local title="$1"; shift
+    {
+        echo "=========================================="
+        echo "## ${title}"
+        echo "=========================================="
+        if "$@" 2>&1; then :; else echo "(command exited $?)"; fi
+        echo
+    }
+}
+
+{
+    echo "ara-kiosk boot-status — generated $(now)"
+    echo
+
+    section "hostname / uptime / kernel" \
+        bash -c 'echo "hostname: $(hostname)"; echo "uptime:   $(uptime -p 2>/dev/null || uptime)"; echo "kernel:   $(uname -a)"; echo "boot:     $(uptime -s 2>/dev/null)"'
+
+    section "network: link state" \
+        bash -c 'ip -brief addr show; echo; ip -brief link show'
+
+    section "network: default route + DNS resolution" \
+        bash -c 'ip route show default; echo; getent hosts deb.debian.org github.com 2>&1 | head'
+
+    section "wifi: rfkill / iw / wpa_supplicant" \
+        bash -c 'rfkill list 2>&1 | head -20; echo; iw reg get 2>&1 | head -10; echo; ls -la /etc/NetworkManager/system-connections/ 2>&1; ls -la /boot/firmware/wpa_supplicant.conf /boot/firmware/network-config /boot/firmware/custom.toml 2>&1'
+
+    section "FAT32 first-boot inputs (what rpi-imager / user dropped on us)" \
+        bash -c 'ls -la /boot/firmware/ 2>&1 | grep -vE "(\.dtb|\.bin|\.dat|\.elf|fixup|start|kernel|cmdline.txt|config.txt|bootcode|overlays)" || true'
+
+    section "user / lingering / pi home" \
+        bash -c 'getent passwd 1000 2>&1; echo; ls -la /var/lib/systemd/linger/ 2>&1; ls -ld /home/pi 2>&1'
+
+    section "audio: usb / pipewire / wireplumber" \
+        bash -c 'lsusb 2>&1 | grep -iE "xmos|xvf|respeaker|2886|20b1" || echo "(reSpeaker XVF3800 not enumerated)"; echo; XDG_RUNTIME_DIR=/run/user/1000 sudo -u pi wpctl status 2>&1 | head -30 || echo "(wpctl unavailable — pipewire may not be running yet)"'
+
+    section "docker / picompose / lva container" \
+        bash -c 'systemctl is-active docker.service 2>&1; echo; systemctl is-active picompose.service 2>&1; echo; docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" 2>&1 | head -10'
+
+    section "kiosk service status (cage on tty1)" \
+        bash -c 'ps -ef | grep -E "(cage|chromium|agetty.*tty1)" | grep -v grep; echo; ss -tlnp 2>/dev/null | grep -E "(:8123|:6053|:443|:80) " | head -10 || true'
+
+    section "led services" \
+        bash -c 'systemctl is-active xvf3800-led.service xvf3800-led-bridge.service 2>&1; echo; journalctl -u xvf3800-led.service -u xvf3800-led-bridge.service --since "10 minutes ago" --no-pager 2>&1 | tail -20'
+
+    section "recent failures (last 50 lines from journal of failed units)" \
+        bash -c 'systemctl --failed --no-pager 2>&1; echo; journalctl -p err -b --no-pager 2>&1 | tail -50'
+} > "${TMP}" 2>&1
+
+# Atomic replace so a half-written file isn't seen by an SD-card reader.
+mv -f "${TMP}" "${OUT}"
+chmod 0644 "${OUT}"

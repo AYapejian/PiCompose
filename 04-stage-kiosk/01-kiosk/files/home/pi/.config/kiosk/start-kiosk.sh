@@ -30,8 +30,23 @@ case "$KIOSK_URL" in
 esac
 
 echo "kiosk: waiting for ${host}:${port}"
+deadline=$(( $(date +%s) + 60 ))
+warned=0
 until nc -z "$host" "$port" 2>/dev/null; do
     sleep 1
+    # After 60s of unreachable HA, surface the failure so the screen
+    # isn't a silent black + cursor — without taking over tty1 entirely.
+    # (cage owns tty1; we can't write text into the compositor, but we
+    # can write to /boot/firmware/last-boot-status.txt and to the journal.)
+    if [ "${warned}" -eq 0 ] && [ "$(date +%s)" -ge "${deadline}" ]; then
+        warned=1
+        msg="kiosk: ${host}:${port} unreachable after 60s — likely Wi-Fi / network problem"
+        echo "${msg}"
+        logger -t kiosk "${msg}"
+        # Trigger an immediate boot-status refresh if the diagnostic
+        # service is installed.
+        systemctl start boot-status.service 2>/dev/null || true
+    fi
 done
 echo "kiosk: ${host}:${port} reachable, launching Chromium"
 
