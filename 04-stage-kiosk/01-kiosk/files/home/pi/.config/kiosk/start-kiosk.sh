@@ -39,7 +39,7 @@ echo "kiosk: ${host}:${port} reachable, launching Chromium"
 # default. --test-type silences the warning chip Chromium otherwise
 # pins to the top of the kiosk window.
 # shellcheck disable=SC2086
-exec chromium-browser \
+exec chromium \
     --kiosk \
     --noerrdialogs \
     --disable-infobars \
