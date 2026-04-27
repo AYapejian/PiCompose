@@ -67,6 +67,31 @@ jobs:
           sudo chown -R apt-cacher-ng:apt-cacher-ng /var/cache/apt-cacher-ng
           sudo service apt-cacher-ng restart
 
+      # Manual disk cleanup. We can't use the pi-gen-action's
+      # increase-runner-disk-size flag because its apt-purge-packages
+      # step references google-chrome-stable, which doesn't exist on
+      # ubuntu-24.04-arm runners — exits 100 before pi-gen even starts.
+      # This block frees ~25-30 GB of pre-installed toolchains we don't
+      # need for a Pi image build (.NET, Android SDK, Swift, GHC, the
+      # Linuxbrew prefix, the runner's hostedtoolcache).
+      - name: Free runner disk space (arm64-safe)
+        run: |
+          set -euo pipefail
+          echo "==> Disk before cleanup:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /home/linuxbrew || true
+          sudo rm -rf /opt/hostedtoolcache || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf /usr/local/graalvm || true
+          sudo apt-get autoremove -y --purge || true
+          sudo apt-get clean || true
+          echo "==> Disk after cleanup:"
+          df -h /
+
       # Only needed for 32bit build on x86_64 runner
       - name: Set up QEMU
         if: matrix.name == '32bit'
@@ -115,11 +140,12 @@ jobs:
           
           # Build options
           enable-noobs: false
-          # ubuntu-24.04-arm runners have ~14 GB free on root; pi-gen
-          # needs ~25 GB during stage chroots + apt-cacher-ng cache +
-          # final compression. Let the action remap /tmp onto a bigger
-          # volume to avoid mid-build ENOSPC.
-          increase-runner-disk-size: true
+          # NOT using the action's increase-runner-disk-size: its
+          # apt-purge-packages step fails on ubuntu-24.04-arm because
+          # google-chrome-stable isn't published for arm64. We do the
+          # equivalent cleanup ourselves in the "Free runner disk
+          # space" step above.
+          increase-runner-disk-size: false
           verbose-output: true
           
           # GitHub token
