@@ -30,3 +30,12 @@ jobs:
       compression: xz
       compression-level: "6"
       custom-hostname: kiosk
+
+  # After a successful image build, regenerate the rpi-imager catalog
+  # JSON so end users pointing rpi-imager at our --repo URL automatically
+  # see the latest image with the customisation wizard enabled.
+  publish-imager-json:
+    needs: ara-kiosk-xvf3800-lva
+    permissions:
+      contents: write
+    uses: ./.github/workflows/create-rpi-image-json.yml
