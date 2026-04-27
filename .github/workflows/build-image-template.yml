@@ -36,6 +36,11 @@ jobs:
   build_images:
     name: Build ${{ inputs.image-name }}
     runs-on: ubuntu-24.04-arm
+    permissions:
+      # softprops/action-gh-release creates / updates the prerelease
+      # holding the .img.xz artifact. Public repos default to read-only
+      # GITHUB_TOKEN, so this needs to be granted explicitly.
+      contents: write
 
 # The build
     steps:
@@ -110,7 +115,11 @@ jobs:
           
           # Build options
           enable-noobs: false
-          increase-runner-disk-size: false
+          # ubuntu-24.04-arm runners have ~14 GB free on root; pi-gen
+          # needs ~25 GB during stage chroots + apt-cacher-ng cache +
+          # final compression. Let the action remap /tmp onto a bigger
+          # volume to avoid mid-build ENOSPC.
+          increase-runner-disk-size: true
           verbose-output: true
           
           # GitHub token

@@ -1,16 +1,21 @@
 name: Build ara-kiosk image
 
-# DISABLED until local build is validated. Re-enable by uncommenting
-# the `push` trigger below — see CLAUDE.md → "Local build instructions"
-# first. Until then, builds run only via the Actions tab "Run workflow"
-# button or via `gh workflow run`.
+# Builds run on:
+#   - push to main (post-merge integration build)
+#   - push to feat/* / fix/* (PR validation; includes the bring-up
+#     branch feat/respeaker-xvf3800-kiosk-support)
+#   - tag push v*.*.* (release builds — produces a stable release
+#     instead of a per-branch prerelease)
+#   - workflow_dispatch (manual one-off via Actions UI / `gh workflow run`)
 on:
   workflow_dispatch: {}
-  # push:
-  #   branches:
-  #     - main
-  #   tags:
-  #     - 'v*.*.*'
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+    tags:
+      - 'v*.*.*'
 
 jobs:
   ara-kiosk-xvf3800-lva:
