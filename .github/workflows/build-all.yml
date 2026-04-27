@@ -19,10 +19,14 @@ on:
 
 jobs:
   ara-kiosk-xvf3800-lva:
+    # Caller permissions must be at least what the called workflow asks
+    # for; the template publishes a release via softprops/action-gh-release.
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-image-template.yml
     with:
       image-name: ara-kiosk
       stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-xvf3800 ./03-stage-linux-voice-assistant ./04-stage-kiosk ./05-stage-finish
       compression: xz
-      compression-level: 6
+      compression-level: "6"
       custom-hostname: kiosk
