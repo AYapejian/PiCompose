@@ -1,0 +1,17 @@
+[Unit]
+Description=Write a boot-status diagnostic snapshot to /boot/firmware/last-boot-status.txt
+# `After=multi-user.target` here combined with `WantedBy=multi-user.target`
+# below is a textbook ordering cycle — systemd silently dropped the
+# timer's start to break it. Just depending on docker + picompose +
+# network-online.target is enough; multi-user.target is implicit via
+# WantedBy.
+After=docker.service picompose.service network-online.target
+Wants=docker.service picompose.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/boot-status
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

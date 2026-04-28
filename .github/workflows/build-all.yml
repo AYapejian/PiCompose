@@ -1,66 +1,41 @@
-name: Build All PiCompose
+name: Build ara-kiosk image
 
+# Builds run on:
+#   - push to main (post-merge integration build)
+#   - push to feat/* / fix/* (PR validation; includes the bring-up
+#     branch feat/respeaker-xvf3800-kiosk-support)
+#   - tag push v*.*.* (release builds — produces a stable release
+#     instead of a per-branch prerelease)
+#   - workflow_dispatch (manual one-off via Actions UI / `gh workflow run`)
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - main
-      - feature/*
-      - fix/*
-      - hotfix/*
-      - bugfix/*
+      - 'feat/**'
+      - 'fix/**'
     tags:
       - 'v*.*.*'
 
 jobs:
-  # NO SPECIFIC HARDWARE
-  build:
+  ara-kiosk-xvf3800-lva:
+    # Caller permissions must be at least what the called workflow asks
+    # for; the template publishes a release via softprops/action-gh-release.
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-image-template.yml
     with:
-      image-name: PiCompose
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-other ./04-stage-finish
-      compression: zip
-      compression-level: 6
-      custom-hostname: picompose
-
-  # 2MICHAT-v1
-  build-2michat:
-    uses: ./.github/workflows/build-image-template.yml
-    with:
-      image-name: PiCompose-2MicHat
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-2michat-v1 ./04-stage-finish
+      image-name: ara-kiosk
+      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-xvf3800 ./03-stage-linux-voice-assistant ./04-stage-kiosk ./05-stage-finish
       compression: xz
-      compression-level: 6
-      custom-hostname: picompose
+      compression-level: "6"
+      custom-hostname: kiosk
 
-  build-2michat-lva:
-    uses: ./.github/workflows/build-image-template.yml
-    with:
-      image-name: PiCompose_2MicHat_Linux-Voice-Assistant
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-2michat-v1 ./03-stage-linux-voice-assistant ./04-stage-finish
-      compression: xz
-      compression-level: 6
-      custom-hostname: picompose
-
-  # RESPEAKER-LITE
-  build-respeaker_lite:
-    uses: ./.github/workflows/build-image-template.yml
-    with:
-      image-name: PiCompose-Respeaker_lite
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-respeaker_lite ./04-stage-finish
-      compression: xz
-      compression-level: 6
-      custom-hostname: picompose
-
-  build-respeaker_lite-lva:
-    uses: ./.github/workflows/build-image-template.yml
-    with:
-      image-name: PiCompose_Respeaker-lite_Linux-Voice-Assistant
-      stage-list: stage0 stage1 stage2 ./01-stage-picompose ./02-stage-audiodriver-respeaker_lite ./03-stage-linux-voice-assistant ./04-stage-finish
-      compression: xz
-      compression-level: 6
-      custom-hostname: picompose
-
-  # RPI IMAGER JSON
-  generate-rpi-imager-json:
-    needs: [build, build-2michat, build-respeaker_lite, build-2michat-lva, build-respeaker_lite-lva]
+  # After a successful image build, regenerate the rpi-imager catalog
+  # JSON so end users pointing rpi-imager at our --repo URL automatically
+  # see the latest image with the customisation wizard enabled.
+  publish-imager-json:
+    needs: ara-kiosk-xvf3800-lva
+    permissions:
+      contents: write
     uses: ./.github/workflows/create-rpi-image-json.yml

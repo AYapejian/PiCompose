@@ -1,0 +1,27 @@
+#!/bin/bash
+# lva-env-sync — copy /boot/firmware/lva.env onto /compose/lva/.env at boot.
+#
+# Lets a fleet operator pin per-device LVA overrides on the FAT32
+# partition without ever SSHing in. Runs Before=picompose.service so
+# the next compose-up picks up the override.
+
+set -u
+
+SRC="/boot/firmware/lva.env"
+DST="/compose/lva/.env"
+
+if [ ! -f "$SRC" ]; then
+    echo "lva-env-sync: $SRC not present; leaving image-baked $DST in place"
+    exit 0
+fi
+
+# Only replace if content differs, so we don't churn mtime on every boot
+# and trigger an unnecessary recreate when compose-manager.sh diffs.
+if [ -f "$DST" ] && cmp -s "$SRC" "$DST"; then
+    echo "lva-env-sync: $DST already matches $SRC"
+    exit 0
+fi
+
+mkdir -p "$(dirname "$DST")"
+install -m 644 "$SRC" "$DST"
+echo "lva-env-sync: synced $SRC -> $DST"

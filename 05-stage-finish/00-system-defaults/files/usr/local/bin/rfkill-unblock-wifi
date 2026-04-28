@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# rfkill-unblock-wifi — release any RF Kill blocks on Wi-Fi at boot.
+#
+# Runs once after the network stack is up. Safe to run repeatedly.
+
+set -uo pipefail
+
+if ! command -v rfkill >/dev/null 2>&1; then
+    echo "rfkill not installed; nothing to do" >&2
+    exit 0
+fi
+
+# Set regdomain via iw if available — covers cases where the cmdline
+# kernel param didn't take effect (e.g., debug builds).
+if command -v iw >/dev/null 2>&1; then
+    iw reg set US 2>/dev/null || true
+fi
+
+# Unblock anything labelled wifi/wlan; idempotent.
+rfkill unblock wifi  || true
+rfkill unblock wlan  || true
+rfkill unblock all   || true
+
+# Log final state so we can confirm in journal.
+rfkill list 2>&1 | sed 's/^/rfkill-unblock-wifi: /'

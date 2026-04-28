@@ -1,0 +1,22 @@
+[Unit]
+Description=Bridge LVA voice-assistant state to XVF3800 LED ring
+# Earlier revisions had `After=picompose.service` and
+# `Requires=docker.service`, which collided with picompose's own
+# ordering and got the bridge job dropped to break a cycle ("Job
+# xvf3800-led-bridge.service/start deleted to break ordering cycle
+# starting with multi-user.target/start"). Keeping deps minimal and
+# letting the script's wait_for_container loop block on `lva` is the
+# robust path.
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/xvf3800-led-bridge
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh /boot/firmware/last-boot-status.txt every 5 minutes
+After=boot-status.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

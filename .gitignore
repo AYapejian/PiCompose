@@ -1,0 +1,14 @@
+# pi-gen working tree (cloned by scripts/build-local.sh)
+/.pi-gen-work/
+
+# Local image artifacts mirrored from pi-gen's deploy/
+/deploy/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*~
+
+# Python bytecode (the imager-json script gets py_compile'd in CI)
+__pycache__/
+*.pyc

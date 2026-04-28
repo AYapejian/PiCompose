@@ -1,0 +1,17 @@
+[Unit]
+Description=reSpeaker XVF3800 LED idle state
+# Wait for udev to settle so the XVF3800 USB device is enumerated and
+# the udev rules have stamped its access bits.
+After=systemd-udev-settle.service multi-user.target
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/xvf3800-led
+RemainAfterExit=no
+# Don't punish a failed LED command with a service failure that masks
+# real issues elsewhere — the script handles its own error paths.
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

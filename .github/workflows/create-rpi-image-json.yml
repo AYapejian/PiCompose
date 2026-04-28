@@ -1,74 +1,68 @@
-name: Create RPI Imager JSON
+name: Publish rpi-imager catalog JSON
 
+# Publishes an rpi-imager.json catalog pointing at the latest published
+# .img.xz release. The catalog is itself attached to a release tagged
+# `rpi-imager-json`, so end users can run:
+#
+#   rpi-imager --repo https://github.com/<owner>/<repo>/releases/download/rpi-imager-json/rpi-imager.json
+#
+# and get the customisation wizard (hostname, SSH key, Wi-Fi, locale)
+# instead of being kicked into the bare "Use custom image" flow.
+#
+# Triggered:
+#   - workflow_call from build-all.yml (after a successful image build)
+#   - workflow_dispatch (manual rebuild of the catalog without a new image)
 
 on:
-  workflow_call:
+  workflow_call: {}
+  workflow_dispatch: {}
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Generate Raspberry Pi Imager JSON (conditional)
-      - name: Generate Raspberry Pi Imager JSON
+      - name: Generate rpi-imager.json
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
           chmod +x scripts/generate-imager-json.py
           python3 scripts/generate-imager-json.py
+          echo "==> Generated catalog:"
+          jq '.os_list[] | {name, latest_subitem: (.subitems[0] | {name, url, init_format, devices, capabilities})}' rpi-imager.json
 
-      - name: Delete existing RPI Imager JSON release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              const { data: releases } = await github.rest.repos.listReleases({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                per_page: 100
-              });
-              const release = releases.find(r => r.tag_name === 'rpi-imager-json');
-              if (release) {
-                await github.rest.repos.deleteRelease({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  release_id: release.id
-                });
-                console.log('Deleted existing release rpi-imager-json');
-              }
-            } catch (error) {
-              console.log('Release rpi-imager-json does not exist or could not be deleted');
-            }
+      # Replace the catalog release in place. The tag stays stable
+      # (rpi-imager-json) so the URL users put in --repo never changes.
+      - name: Delete previous catalog release (if any)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete rpi-imager-json --yes --cleanup-tag --repo "${{ github.repository }}" 2>/dev/null || true
 
-      - name: Delete existing RPI Imager JSON tag
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              await github.rest.git.deleteRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: 'tags/rpi-imager-json'
-              });
-              console.log('Deleted existing tag rpi-imager-json');
-            } catch (error) {
-              console.log('Tag rpi-imager-json does not exist or could not be deleted');
-            }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Release for RPI Imager JSON
+      - name: Publish catalog as rpi-imager-json release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: rpi-imager-json
-          generate_release_notes: false
-          name: RPI Imager JSON
-          body: 'Auto-generated Raspberry Pi Imager JSON file - Run ID: ${{ github.run_id }} - Run Number: ${{ github.run_number }} - Timestamp: ${{ github.event.head_commit.timestamp }}'
-          draft: false
+          name: rpi-imager catalog
+          body: |
+            Auto-generated rpi-imager catalog for ara-kiosk-image.
+
+            **Use it:**
+            ```
+            rpi-imager --repo https://github.com/${{ github.repository }}/releases/download/rpi-imager-json/rpi-imager.json
+            ```
+
+            Or via the imager Settings → "Image custom repository". With
+            this catalog selected, the customisation wizard (hostname,
+            SSH key, Wi-Fi, locale) is offered when flashing the image.
+
+            Run: ${{ github.run_id }} · sha: ${{ github.sha }}
           prerelease: true
-          files: ./rpi-imager.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          files: rpi-imager.json

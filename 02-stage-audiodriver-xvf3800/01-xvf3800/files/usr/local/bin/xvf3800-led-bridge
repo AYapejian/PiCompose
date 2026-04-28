@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# xvf3800-led-bridge — drive the reSpeaker LED ring from LVA's voice
+# assistant pipeline state.
+#
+# LVA exposes voice-assistant state two ways:
+#   - INFO logs: "Wake word '<name>' activated ..." and "Stop word detected"
+#   - DEBUG logs: "Voice event: type=VOICE_ASSISTANT_<phase>, data=..."
+#
+# This bridge tails `docker logs -f lva` and grep/awk's the events into
+# xvf_host LED commands. DEBUG must be enabled on the LVA container
+# (set ENABLE_DEBUG="1" in /compose/lva/.env, which our default does).
+#
+# State -> LED mapping
+# ---------------------
+#   IDLE       single color, dim cyan       — matches xvf3800-led boot default
+#   LISTENING  breath, green, bright        — wake word fired, recording
+#   THINKING   breath, orange, bright       — sent to STT/intent, waiting
+#   SPEAKING   single color, blue, bright   — TTS playing
+#
+# The bridge fails soft: any xvf_host invocation that returns non-zero is
+# logged but doesn't kill the daemon. systemd Restart=always covers
+# longer-term breakage (e.g., the lva container being recreated).
+
+set -uo pipefail
+
+LVA_CONTAINER="${LVA_CONTAINER:-lva}"
+
+log() { echo "$(date -u +'%Y-%m-%dT%H:%M:%SZ') xvf3800-led-bridge: $*" >&2; }
+
+# Convenience: send a sequence of LED commands. Failures are non-fatal.
+led() {
+    local effect="$1" color="$2" brightness="$3"
+    xvf_host LED_BRIGHTNESS "${brightness}" >/dev/null 2>&1 || true
+    xvf_host LED_COLOR      "${color}"      >/dev/null 2>&1 || true
+    xvf_host LED_EFFECT     "${effect}"     >/dev/null 2>&1 || true
+}
+
+# State presets (effect, color, brightness)
+set_idle()      { led 3 0x002030 64;  }   # single color, dim cyan
+set_listening() { led 1 0x00ff00 200; }   # breath, green
+set_thinking()  { led 1 0xffa500 200; }   # breath, orange
+set_speaking()  { led 3 0x0080ff 200; }   # single color, blue
+
+# Verify xvf_host is even installed before claiming we'll do anything.
+if ! command -v xvf_host >/dev/null 2>&1; then
+    log "xvf_host wrapper not on PATH; bridge has nothing to drive — exiting"
+    exit 0
+fi
+if ! command -v docker >/dev/null 2>&1; then
+    log "docker CLI not available; can't tail lva logs — exiting"
+    exit 0
+fi
+
+# Wait for the lva container to exist. picompose.service brings it up on
+# first boot after pulling the image, which can take a couple of minutes.
+wait_for_container() {
+    local tries=0
+    while ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${LVA_CONTAINER}"; do
+        tries=$((tries + 1))
+        if [ "$((tries % 12))" -eq 0 ]; then
+            log "still waiting for container '${LVA_CONTAINER}' (${tries}x5s)"
+        fi
+        sleep 5
+    done
+    log "container '${LVA_CONTAINER}' is up"
+}
+
+# Sanity-check that xvf_host can talk to the device. If not, leave LEDs
+# alone (the daemon stays alive in case the device shows up later, but
+# we don't fight a missing-device with retries on every event).
+device_responsive() {
+    xvf_host VERSION >/dev/null 2>&1
+}
+
+handle_line() {
+    local line="$1"
+    case "${line}" in
+        *"Wake word"*"activated"*)
+            log "wake -> LISTENING"
+            set_listening
+            ;;
+        *"Voice event: type=VOICE_ASSISTANT_STT_"*"END"*)
+            # STT_VAD_END / STT_END — speech captured, going to intent
+            log "stt_end -> THINKING"
+            set_thinking
+            ;;
+        *"Voice event: type=VOICE_ASSISTANT_INTENT_START"*)
+            log "intent_start -> THINKING"
+            set_thinking
+            ;;
+        *"Voice event: type=VOICE_ASSISTANT_TTS_START"*|*"play_tts"*|*"Playing TTS"*)
+            log "tts -> SPEAKING"
+            set_speaking
+            ;;
+        *"Voice event: type=VOICE_ASSISTANT_RUN_END"*|*"Stop word detected"*)
+            log "end -> IDLE"
+            set_idle
+            ;;
+    esac
+}
+
+main_loop() {
+    while true; do
+        wait_for_container
+
+        # Set idle once at the start of each tail loop so the LEDs match
+        # the daemon's belief about state even after a container restart.
+        if device_responsive; then
+            set_idle
+        fi
+
+        # --since 0s avoids replaying historical events that already
+        # fired; we only want to react to new state changes from now on.
+        log "tailing docker logs for ${LVA_CONTAINER}"
+        docker logs -f --since 0s "${LVA_CONTAINER}" 2>&1 | while IFS= read -r line; do
+            handle_line "${line}"
+        done
+
+        log "log tail ended (container restart?); reconnecting in 5s"
+        sleep 5
+    done
+}
+
+main_loop

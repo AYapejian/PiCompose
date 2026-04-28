@@ -1,179 +1,207 @@
 #!/usr/bin/env python3
-# generate-imager-json.py
-# Generiert eine JSON-Datei für rpi-imager mit allen Releases
+"""Generate an rpi-imager catalog JSON for ara-kiosk-image.
 
+Output: a single rpi-imager.json file pointing at the most recent
+release on the configured GitHub repo that has an .img.xz asset. The
+image declares init_format=cloudinit-rpi so rpi-imager's customisation
+wizard offers hostname, SSH, Wi-Fi, locale.
+
+Schema notes (cross-checked against the official RPi catalog at
+https://downloads.raspberrypi.com/os_list_imagingutility_v3.json):
+
+  - init_format must be "cloudinit-rpi" or "systemd". "cloud-init"
+    (with a hyphen) is not recognised and silently filters the entry.
+  - extract_size is effectively required; rpi-imager won't list an
+    OS entry without it because the SD-card-space precheck depends
+    on the decompressed size.
+  - extract_sha256 is optional but recommended; gives the imager an
+    integrity check after decompression.
+  - capabilities is for special features like "rpi_connect", NOT
+    customisation-wizard fields. Those are inferred from init_format.
+
+Configuration via env vars:
+  REPO_OWNER  default: AYapejian
+  REPO_NAME   default: PiCompose
+  OUTPUT_FILE default: rpi-imager.json
+"""
+
+import hashlib
 import json
+import lzma
+import os
 import sys
-import re
 import urllib.request
 
-OWNER = "florian-asche"
-REPO = "PiCompose"
-OUTPUT_FILE = "rpi-imager.json"
-API_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/releases"
+OWNER = os.environ.get("REPO_OWNER", "AYapejian")
+REPO = os.environ.get("REPO_NAME", "PiCompose")
+OUTPUT_FILE = os.environ.get("OUTPUT_FILE", "rpi-imager.json")
+RELEASES_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/releases?per_page=50"
+SELF_TAG = "rpi-imager-json"
+
+DEVICES = [
+    {
+        "name": "Raspberry Pi 5",
+        "tags": ["pi5-64bit"],
+        "default": True,
+        "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_5.png",
+        "description": "Raspberry Pi 5 (required — the kiosk and reSpeaker stack assume Pi 5 + arm64)",
+        "matching_type": "exclusive",
+    },
+    {
+        "name": "No filtering",
+        "tags": [],
+        "description": "Show every image regardless of device tag",
+        "matching_type": "inclusive",
+    },
+]
+
+
+def fetch_releases():
+    req = urllib.request.Request(
+        RELEASES_URL,
+        headers={"User-Agent": "ara-kiosk-imager-json/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def find_image_asset(release):
+    img = sha = None
+    for asset in release.get("assets") or []:
+        if asset["name"].endswith(".img.xz"):
+            img = asset
+        elif asset["name"].endswith(".img.xz.sha256"):
+            sha = asset
+    return img, sha
+
+
+def fetch_xz_metrics(img_xz_url):
+    """Stream-download the .img.xz, decompress on the fly, return
+    (extract_size, extract_sha256_hex). Never writes to disk; memory
+    use is one 1 MB chunk at a time."""
+    print(f"  -> streaming {img_xz_url} for extract size/sha256 …", file=sys.stderr)
+    sha = hashlib.sha256()
+    size = 0
+    decompressor = lzma.LZMADecompressor()
+    req = urllib.request.Request(
+        img_xz_url, headers={"User-Agent": "ara-kiosk-imager-json/1.0"}
+    )
+    with urllib.request.urlopen(req, timeout=300) as r:
+        while True:
+            chunk = r.read(1024 * 1024)
+            if not chunk:
+                break
+            decompressed = decompressor.decompress(chunk)
+            if decompressed:
+                sha.update(decompressed)
+                size += len(decompressed)
+    if not decompressor.eof:
+        raise RuntimeError("xz stream did not end at EOF — incomplete download?")
+    print(f"     extract_size={size} extract_sha256={sha.hexdigest()}", file=sys.stderr)
+    return size, sha.hexdigest()
+
+
+def fetch_xz_sha256_sidecar(sha_asset_url):
+    """Fetch and parse a `<hash>  <filename>` sidecar file."""
+    if not sha_asset_url:
+        return None
+    try:
+        with urllib.request.urlopen(sha_asset_url, timeout=30) as r:
+            text = r.read().decode("utf-8", errors="replace").strip()
+        return text.split()[0] if text else None
+    except Exception as e:
+        print(f"  -> sha256 sidecar fetch failed ({e}); skipping", file=sys.stderr)
+        return None
+
+
+def build_subitem(release, img_asset, sha_asset):
+    extract_size, extract_sha256 = fetch_xz_metrics(img_asset["browser_download_url"])
+    image_download_sha256 = fetch_xz_sha256_sidecar(
+        sha_asset["browser_download_url"] if sha_asset else None
+    )
+
+    item = {
+        "name": f"ara-kiosk ({release['tag_name']})",
+        "description": (
+            "Pi 5 + reSpeaker XVF3800 + Linux Voice Assistant + Chromium kiosk. "
+            f"Tag: {release['tag_name']}, "
+            f"published: {(release.get('published_at') or 'unknown')[:10]}."
+        ),
+        "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_5.png",
+        "url": img_asset["browser_download_url"],
+        "release_date": (release.get("published_at") or "")[:10],
+        # Compressed .img.xz stats
+        "image_download_size": img_asset["size"],
+        # Decompressed .img stats — both required for rpi-imager to
+        # display the entry and verify the SD card has enough space.
+        "extract_size": extract_size,
+        "extract_sha256": extract_sha256,
+        # Tells rpi-imager's customisation wizard which scheme to use.
+        # cloudinit-rpi consumes /boot/firmware/custom.toml on first boot.
+        "init_format": "cloudinit-rpi",
+        "devices": ["pi5-64bit"],
+    }
+    if image_download_sha256:
+        item["image_download_sha256"] = image_download_sha256
+    return item
+
 
 def main():
-    print("Fetching releases from GitHub...")
-    
-    try:
-        with urllib.request.urlopen(API_URL) as response:
-            releases_data = json.loads(response.read().decode())
-    except Exception as e:
-        print(f"Error: Failed to fetch releases - {e}")
+    releases = fetch_releases()
+    releases = [r for r in releases if r.get("tag_name") != SELF_TAG]
+    releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+
+    subitems_all = []
+    for release in releases:
+        img, sha = find_image_asset(release)
+        if img is None:
+            continue
+        print(f"==> processing release {release['tag_name']}", file=sys.stderr)
+        try:
+            subitems_all.append((release, build_subitem(release, img, sha)))
+        except Exception as e:
+            print(f"  -> skipping {release['tag_name']}: {e}", file=sys.stderr)
+
+    if not subitems_all:
+        print(f"ERROR: no usable .img.xz on {OWNER}/{REPO}", file=sys.stderr)
         sys.exit(1)
 
-    print("Successfully fetched releases")
-
-    # Get the latest version
-    LATEST_VERSION = releases_data[0]['tag_name']
-    if LATEST_VERSION.startswith('v'):
-        LATEST_VERSION = LATEST_VERSION[1:]
-    print(f"Latest version: {LATEST_VERSION}")
-
-    # Find the first release that has .xz or .zip files (this will be our "latest" with files)
-    latest_with_files_tag = None
-    for release in releases_data:
-        for asset in release['assets']:
-            if asset['name'].endswith('.xz') or asset['name'].endswith('.zip'):
-                latest_with_files_tag = release['tag_name']
-                break
-        if latest_with_files_tag:
-            break
-
-    # Collect all releases with .xz or .zip files
-    releases_with_files = []
-    for release in releases_data:
-        tag_name = release['tag_name']
-        
-        xz_files = []
-        for asset in release['assets']:
-            if asset['name'].endswith('.xz') or asset['name'].endswith('.zip'):
-                xz_files.append({
-                    'name': asset['name'],
-                    'url': asset['browser_download_url']
-                })
-        
-        if xz_files and tag_name != "main":
-            # Format version name
-            version = tag_name[1:] if tag_name.startswith('v') else tag_name
-            
-            releases_with_files.append({
-                'tag_name': tag_name,
-                'version': version,
-                'files': xz_files
-            })
-
-    def format_image_name(filename):
-        """Extract clean image name from filename"""
-        # Remove .img.xz suffix
-        name = filename.replace('.img.xz', '')
-        # Remove date prefix (image_YYYY-MM-DD-)
-        name = re.sub(r'^image_\d{4}-\d{2}-\d{2}-?', '', name)
-        # Replace underscores and hyphens with spaces
-        name = name.replace('_', ' ').replace('-', ' ')
-        clean_name = name.strip()
-        # Add original filename in brackets for clarity
-        return f"{clean_name} ({filename})"
-
-    def build_release_subitems(files):
-        """Build subitems list from files"""
-        # Umgekehrte Sortierung: neueste / letzte Datei zuerst anzeigen
-        reversed_files = reversed(files)
-        return [
-            {
-                "name": format_image_name(f['name']),
-                "description": "PiCompose image",
-                "url": f['url'],
-                "init_format": "systemd",
-                "devices": ["pi5-64bit", "pi4-64bit", "pi3-64bit", "pi3-32bit"],
-                "capabilities": ["ssh", "wifi", "hostname", "locale"]
-            }
-            for f in reversed_files
-        ]
-
-    os_list = []
-
-    # Find main branch release (nightly)
-    main_release = None
-    for release in releases_data:
-        if release['tag_name'] == "main":
-            main_xz_files = []
-            for asset in release['assets']:
-                if asset['name'].endswith('.xz') or asset['name'].endswith('.zip'):
-                    main_xz_files.append({
-                        'name': asset['name'],
-                        'url': asset['browser_download_url']
-                    })
-            if main_xz_files:
-                main_release = main_xz_files
-            break
-
-    # PiCompose (Latest) - all files from the first stable release with .xz files
-    if releases_with_files:
-        latest = releases_with_files[0]
-        os_list.append({
-            "name": "PiCompose (Latest)",
-            "description": "Latest stable PiCompose images",
-            "icon": "icons/cat_raspberry_pi_os.png",
-            "subitems": build_release_subitems(latest['files'])
-        })
-
-    # PiCompose (Nightly) - files from main branch release if available
-    if main_release:
-        os_list.append({
-            "name": "PiCompose (Nightly / Main)",
-            "description": "Latest development build from main branch",
-            "icon": "icons/cat_raspberry_pi_os.png",
-            "subitems": build_release_subitems(main_release)
-        })
-
-    # PiCompose (All Versions) - grouped by release
-    os_list.append({
-        "name": "PiCompose (All Versions)",
-        "description": "All available PiCompose versions",
-        "icon": "icons/cat_raspberry_pi_os.png",
-        "subitems": [
-            {
-                "name": r['version'],
-                "description": f"PiCompose {r['tag_name']} release",
-                "icon": "icons/cat_raspberry_pi_os.png",
-                "subitems": build_release_subitems(r['files'])
-            }
-            for r in releases_with_files
-        ]
-    })
-
-    # Build final JSON
-    devices = [
-        {"name": "Raspberry Pi 5", "tags": ["pi5-64bit", "pi5-32bit"], "default": True, "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_5.png", "description": "Raspberry Pi 5, 500 / 500+, and Compute Module 5", "matching_type": "exclusive", "capabilities": []},
-        {"name": "Raspberry Pi 4", "tags": ["pi4-64bit", "pi4-32bit"], "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_4.png", "description": "Raspberry Pi 4 Model B, 400, and Compute Module 4 / 4S", "matching_type": "inclusive", "capabilities": []},
-        {"name": "Raspberry Pi 3", "tags": ["pi3-64bit", "pi3-32bit"], "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_3.png", "description": "Raspberry Pi 3 Model A+ / B / B+ and Compute Module 3 / 3+", "matching_type": "inclusive", "capabilities": []},
-        {"name": "Raspberry Pi Zero 2 W", "tags": ["pi3-64bit", "pi3-32bit"], "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_Zero_2_W.png", "description": "Raspberry Pi Zero 2 W", "matching_type": "inclusive", "capabilities": []},
-        {"name": "No filtering", "tags": [], "description": "Show every possible image", "matching_type": "inclusive", "capabilities": []}
+    latest_release, latest_item = subitems_all[0]
+    os_list = [
+        {
+            "name": "ara-kiosk (Latest)",
+            "description": "Most recent ara-kiosk-image build",
+            "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_5.png",
+            "subitems": [latest_item],
+        }
     ]
 
-    final_data = {
+    if len(subitems_all) > 1:
+        os_list.append(
+            {
+                "name": "ara-kiosk (All Versions)",
+                "description": "Every published ara-kiosk-image build",
+                "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_5.png",
+                "subitems": [item for _, item in subitems_all],
+            }
+        )
+
+    catalog = {
         "imager": {
-            "latest_version": LATEST_VERSION,
-            "url": "https://www.raspberrypi.com/software/",
-            "devices": devices
+            "latest_version": (latest_release.get("tag_name") or "0.0.0").lstrip("v"),
+            "url": f"https://github.com/{OWNER}/{REPO}",
+            "devices": DEVICES,
         },
-        "os_list": os_list
+        "os_list": os_list,
     }
 
-    # Write output
-    with open(OUTPUT_FILE, 'w') as f:
-        json.dump(final_data, f, indent=2)
+    with open(OUTPUT_FILE, "w") as f:
+        json.dump(catalog, f, indent=2)
+    print(
+        f"wrote {OUTPUT_FILE}: latest={latest_release['tag_name']} "
+        f"({len(subitems_all)} image(s) total)"
+    )
 
-    print(f"Generated {OUTPUT_FILE}")
-    print("")
-    print("Content preview:")
-    print(json.dumps(final_data, indent=2))
-    
-    # Count .xz files
-    total_xz = sum(len(r['files']) for r in releases_with_files)
-    print(f"")
-    print(f"Total .xz files: {total_xz}")
 
 if __name__ == "__main__":
     main()
